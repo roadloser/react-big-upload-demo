@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  // 启用构建缓存
+  cacheDir: 'node_modules/.vite',
   plugins: [react()],
   server: {
     host: '0.0.0.0',
@@ -30,12 +32,20 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
+        // 优化分包策略
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
           'antd-vendor': ['antd'],
           'axios-vendor': ['axios'],
         },
+        // 优化文件命名
+        entryFileNames: 'assets/[name].[hash].js',
+        chunkFileNames: 'assets/[name].[hash].js',
+        assetFileNames: 'assets/[name].[hash].[ext]',
       },
+      // 优化打包性能
+      cache: true,
+      treeshake: true,
     },
   },
 });
