@@ -15,6 +15,7 @@ interface ChunkInfo {
   fileHash: string;
   index: number;
   size: number;
+  totalSize: number;
 }
 
 /**
@@ -56,9 +57,10 @@ export class UploadService {
     fileHash,
     index,
     size,
+    totalSize, // 添加totalSize参数
   }: ChunkInfo): Promise<{ status: string; path?: string; uploaded?: number }> {
     // 参数验证
-    this.validateChunkParams({ chunk, hash, filename, fileHash, index, size });
+    this.validateChunkParams({ chunk, hash, filename, fileHash, index, size, totalSize });
 
     const chunkDir = join(this.uploadDir, fileHash);
     const chunkPath = join(chunkDir, `${index}`);
@@ -76,12 +78,12 @@ export class UploadService {
       fileHash,
       index,
       size,
+      totalSize,
       path: chunkPath,
     });
 
     // 获取已上传的分片信息
     const uploadedChunks = await this.findChunks(fileHash);
-    const totalSize = uploadedChunks.reduce((acc, cur) => acc + cur.size, 0);
     const expectedChunksCount = Math.ceil(totalSize / (2 * 1024 * 1024)); // 2MB per chunk
 
     // 检查是否所有分片都已上传
@@ -102,6 +104,7 @@ export class UploadService {
     fileHash,
     index,
     size,
+    totalSize,
   }: ChunkInfo): void {
     if (!fileHash) {
       throw new Error('fileHash参数不能为空');
@@ -120,6 +123,9 @@ export class UploadService {
     }
     if (typeof size !== 'number' || size <= 0) {
       throw new Error('size参数必须是大于0的数字');
+    }
+    if (typeof totalSize !== 'number' || totalSize <= 0) {
+      throw new Error('totalSize参数必须是大于0的数字');
     }
   }
 
@@ -159,29 +165,68 @@ export class UploadService {
   ): Promise<{ status: string; path: string }> {
     const filePath = join(this.uploadDir, filename);
     const writeStream = fsSync.createWriteStream(filePath);
+    let hasError = false;
 
     try {
       const chunks = await this.findChunks(fileHash);
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkData = await fs.readFile(join(chunkDir, `${i}`));
-        await new Promise((resolve, reject) => {
-          writeStream.write(chunkData, err => {
-            if (err) {
-              reject(new Error(`写入文件块失败: ${err.message}`));
-            } else resolve(true);
-          });
-        });
+      
+      // 验证分片完整性
+      const sortedChunks = chunks.sort((a, b) => a.index - b.index);
+      for (let i = 0; i < sortedChunks.length; i++) {
+        if (sortedChunks[i].index !== i) {
+          throw new Error(`分片序列不完整，缺少索引 ${i} 的分片`);
+        }
+        // 验证分片文件是否存在
+        try {
+          await fs.access(join(chunkDir, `${i}`));
+        } catch {
+          throw new Error(`分片文件 ${i} 不存在`);
+        }
       }
 
-      writeStream.end();
+      // 使用管道流进行文件合并
+      for (const chunk of sortedChunks) {
+        if (hasError) break;
+        try {
+          const chunkData = await fs.readFile(join(chunkDir, `${chunk.index}`));
+          await new Promise((resolve, reject) => {
+            writeStream.write(chunkData, err => {
+              if (err) {
+                hasError = true;
+                reject(new Error(`写入文件块失败: ${err.message}`));
+              } else resolve(true);
+            });
+          });
+        } catch (err) {
+          hasError = true;
+          throw new Error(`处理分片 ${chunk.index} 时发生错误: ${err.message}`);
+        }
+      }
 
-      // 清理分片文件和记录
-      await fs.rm(chunkDir, { recursive: true });
-      await this.removeChunks(fileHash);
+      if (!hasError) {
+        writeStream.end();
+        // 验证最终文件大小
+        const stats = await fs.stat(filePath);
+        const expectedSize = chunks.reduce((acc, chunk) => acc + chunk.size, 0);
+        if (stats.size !== expectedSize) {
+          throw new Error(`文件大小校验失败: 预期 ${expectedSize} 字节，实际 ${stats.size} 字节`);
+        }
 
-      return { status: 'complete', path: filePath };
+        // 清理分片文件和记录
+        await fs.rm(chunkDir, { recursive: true });
+        await this.removeChunks(fileHash);
+
+        return { status: 'complete', path: filePath };
+      } else {
+        throw new Error('文件合并过程中发生错误');
+      }
     } catch (err) {
+      hasError = true;
       writeStream.end();
+      // 清理不完整的合并文件
+      try {
+        await fs.unlink(filePath);
+      } catch {}
       throw err;
     }
   }
@@ -196,6 +241,7 @@ export class UploadService {
     fileHash: string;
     index: number;
     size: number;
+    totalSize?: number;
     path: string;
   }): Promise<void> {
     return new Promise((resolve, reject) => {

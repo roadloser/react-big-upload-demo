@@ -7,6 +7,7 @@ import axios from 'axios';
  * @property fileId - 文件唯一标识
  * @property index - 分片序号
  * @property size - 分片大小
+ * @property file - 原始文件对象
  */
 interface ChunkUploadParams {
   chunk: Blob;
@@ -14,6 +15,7 @@ interface ChunkUploadParams {
   fileId: string;
   index: number;
   size: number;
+  file: File;
 }
 
 /**
@@ -53,14 +55,16 @@ export const uploadChunk = async ({
   fileId,
   index,
   size,
+  file,
 }: ChunkUploadParams) => {
   const formData = new FormData();
   formData.append('chunk', chunk);
   formData.append('filename', filename);
-  formData.append('fileHash', fileId); // 修改参数名为fileHash
-  formData.append('hash', `${fileId}-${index}`); // 添加hash参数
+  formData.append('fileHash', fileId);
+  formData.append('hash', `${fileId}-${index}`);
   formData.append('index', String(index));
   formData.append('size', String(size));
+  formData.append('totalSize', String(file.size));
 
   const response = await axios.post('/api/upload/chunk', formData, {
     headers: {

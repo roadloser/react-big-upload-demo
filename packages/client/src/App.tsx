@@ -34,6 +34,7 @@ function App() {
             fileId,
             index,
             size: blob.size,
+            file
           });
           completed++;
           setProgress(Math.floor((completed / totalChunks) * 100));

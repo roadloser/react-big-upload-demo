@@ -14,6 +14,7 @@ interface ChunkDto {
   fileHash: string;
   index: string;
   size: string;
+  totalSize: string;
 }
 
 @Controller('upload')
@@ -26,7 +27,7 @@ export class UploadController {
     @UploadedFile() file: Express.Multer.File,
     @Body() chunkInfo: ChunkDto,
   ) {
-    const { hash, filename, fileHash, index, size } = chunkInfo;
+    const { hash, filename, fileHash, index, size, totalSize } = chunkInfo;
     return this.uploadService.handleChunk({
       chunk: file.buffer,
       hash,
@@ -34,6 +35,7 @@ export class UploadController {
       fileHash,
       index: parseInt(index, 10),
       size: parseInt(size, 10),
+      totalSize: parseInt(totalSize, 10),
     });
   }
 }
