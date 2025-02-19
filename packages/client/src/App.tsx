@@ -1,12 +1,13 @@
 import { FileUploader } from './components/FileUploader';
 import { FileList } from './components/FileList';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Typography } from 'antd';
 
 const { Title, Paragraph } = Typography;
 
 function App() {
   const [isMobile, setIsMobile] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 768px)');
@@ -18,6 +19,10 @@ function App() {
     mediaQuery.addListener(handleResize);
 
     return () => mediaQuery.removeListener(handleResize);
+  }, []);
+
+  const handleUploadSuccess = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
   }, []);
 
   return (
@@ -44,10 +49,10 @@ function App() {
         }}
       >
         <div>
-          <FileUploader />
+          <FileUploader onUploadSuccess={handleUploadSuccess} />
         </div>
         <div style={{ flex: 1 }}>
-          <FileList />
+          <FileList key={refreshKey} />
         </div>
       </div>
     </div>
