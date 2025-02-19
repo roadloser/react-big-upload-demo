@@ -23,6 +23,8 @@ interface ChunkUploadParams {
  * @property chunks - 分片数组，包含每个分片的数据和元信息
  * @property fileId - 文件唯一标识
  * @property totalChunks - 总分片数
+ * @property processedChunks - 已处理的分片数量
+ * @property isComplete - 是否处理完成
  */
 interface WorkerChunkData {
   chunks: Array<{
@@ -32,6 +34,8 @@ interface WorkerChunkData {
   }>;
   fileId: string;
   totalChunks: number;
+  processedChunks?: number;
+  isComplete?: boolean;
 }
 
 /**
@@ -57,6 +61,15 @@ export const uploadChunk = async ({
   size,
   file,
 }: ChunkUploadParams) => {
+  console.log('准备上传文件分片：', {
+    filename,
+    fileId,
+    index,
+    size,
+    totalSize: file.size,
+    timestamp: new Date().toISOString()
+  });
+
   const formData = new FormData();
   formData.append('chunk', chunk);
   formData.append('filename', filename);
@@ -66,12 +79,14 @@ export const uploadChunk = async ({
   formData.append('size', String(size));
   formData.append('totalSize', String(file.size));
 
+  console.log('发送分片上传请求...');
   const response = await axios.post('/api/upload/chunk', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
   });
 
+  console.log('分片上传响应：', response.data);
   return response.data;
 };
 
@@ -86,18 +101,37 @@ export const processFileChunks = (
   chunkSize: number,
 ): Promise<WorkerChunkData> => {
   return new Promise((resolve, reject) => {
-    // 创建Worker实例处理文件分片
     const worker = createChunkUploadWorker();
+    let allChunks: WorkerChunkData['chunks'] = [];
 
     // 处理Worker返回的消息
-    worker.onmessage = (e: MessageEvent<WorkerChunkData>) => {
-      worker.terminate(); // 处理完成后终止Worker
-      resolve(e.data);
+    worker.onmessage = (e: MessageEvent<WorkerChunkData & { error?: string }>) => {
+      if (e.data.error) {
+        worker.terminate();
+        reject(new Error(e.data.error));
+        return;
+      }
+
+      // 累积接收到的分片
+      allChunks = allChunks.concat(e.data.chunks);
+
+      // 如果处理完成，返回所有分片数据
+      if (e.data.isComplete) {
+        worker.terminate();
+        resolve({
+          chunks: allChunks,
+          fileId: e.data.fileId,
+          totalChunks: e.data.totalChunks
+        });
+      }
+
+      // 可以在这里添加进度回调
+      console.log(`处理进度: ${e.data.processedChunks}/${e.data.totalChunks}`);
     };
 
     // 处理Worker错误
     worker.onerror = error => {
-      worker.terminate(); // 发生错误时终止Worker
+      worker.terminate();
       reject(error);
     };
 

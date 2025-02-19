@@ -7,24 +7,33 @@ import { AsyncOperation, AsyncPoolFunction } from '../types/utils';
  * @param delay - 重试延迟时间（毫秒）
  * @returns 操作结果的Promise
  */
+interface RetryOptions {
+  maxAttempts?: number;
+  retryDelay?: number | ((attempt: number) => number);
+  onError?: (error: unknown) => void;
+}
+
 export const retryOperation = async <T>(
   operation: AsyncOperation<T>,
-  maxRetries = 3,
-  delay = 1000,
+  options: RetryOptions = {},
 ): Promise<T> => {
+  const { maxAttempts = 3, retryDelay = 1000, onError } = options;
   let lastError: Error | unknown;
+  
   try {
     return await operation();
   } catch (error) {
     lastError = error;
-    for (let i = 1; i < maxRetries; i += 1) {
+    onError?.(error);
+
+    for (let attempt = 1; attempt < maxAttempts; attempt++) {
       try {
-        await new Promise(resolve => {
-          setTimeout(resolve, delay * i);
-        });
+        const delay = typeof retryDelay === 'function' ? retryDelay(attempt) : retryDelay * attempt;
+        await new Promise(resolve => setTimeout(resolve, delay));
         return await operation();
       } catch (err) {
         lastError = err;
+        onError?.(err);
       }
     }
   }
@@ -43,23 +52,44 @@ export const asyncPool = async <T, R>(
   items: T[],
   fn: AsyncPoolFunction<T, R>,
 ): Promise<R[]> => {
+  if (!Array.isArray(items)) {
+    throw new Error('items must be an array');
+  }
+
   const pool = new Set<Promise<R>>();
   const results: Promise<R>[] = [];
 
-  await Promise.all(
-    items.map(async item => {
-      while (pool.size >= concurrency) {
-        await Promise.race(pool);
-      }
-      const promise = fn(item);
-      const result = promise.then(value => {
-        pool.delete(promise);
-        return value;
-      });
-      pool.add(promise);
-      results.push(result);
-    }),
-  );
+  try {
+    await Promise.all(
+      items.map(async item => {
+        while (pool.size >= concurrency) {
+          try {
+            await Promise.race(pool);
+          } catch (error) {
+            console.error('Error in pool:', error);
+          }
+        }
 
-  return Promise.all(results);
+        const promise = fn(item);
+        const result = promise
+          .then(value => {
+            pool.delete(promise);
+            return value;
+          })
+          .catch(error => {
+            pool.delete(promise);
+            console.error('Error in promise:', error);
+            throw error;
+          });
+
+        pool.add(promise);
+        results.push(result);
+      }),
+    );
+
+    return Promise.all(results);
+  } catch (error) {
+    console.error('Error in asyncPool:', error);
+    throw error;
+  }
 };

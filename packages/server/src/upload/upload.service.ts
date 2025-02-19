@@ -57,41 +57,93 @@ export class UploadService {
     fileHash,
     index,
     size,
-    totalSize, // 添加totalSize参数
+    totalSize,
   }: ChunkInfo): Promise<{ status: string; path?: string; uploaded?: number }> {
-    // 参数验证
-    this.validateChunkParams({ chunk, hash, filename, fileHash, index, size, totalSize });
+    try {
+      console.log('接收到文件分片请求：', {
+        filename,
+        fileHash,
+        index,
+        size,
+        totalSize,
+        chunkSize: chunk?.length,
+        timestamp: new Date().toISOString(),
+        memoryUsage: process.memoryUsage()
+      });
 
-    const chunkDir = join(this.uploadDir, fileHash);
-    const chunkPath = join(chunkDir, `${index}`);
+      // 参数验证
+      this.validateChunkParams({ chunk, hash, filename, fileHash, index, size, totalSize });
 
-    // 创建分片目录
-    await this.createChunkDirectory(chunkDir);
+      const chunkDir = join(this.uploadDir, fileHash);
+      const chunkPath = join(chunkDir, `${index}`);
 
-    // 保存分片文件
-    await this.saveChunkFile(chunkPath, chunk);
+      // 创建分片目录
+      await this.createChunkDirectory(chunkDir);
 
-    // 记录分片信息到数据库
-    await this.insertChunk({
-      hash,
-      filename,
-      fileHash,
-      index,
-      size,
-      totalSize,
-      path: chunkPath,
-    });
+      // 保存分片文件
+      await this.saveChunkFile(chunkPath, chunk);
 
-    // 获取已上传的分片信息
-    const uploadedChunks = await this.findChunks(fileHash);
-    const expectedChunksCount = Math.ceil(totalSize / (2 * 1024 * 1024)); // 2MB per chunk
+      // 删除同一索引的旧分片记录
+      await this.removeChunkByIndex(fileHash, index);
 
-    // 检查是否所有分片都已上传
-    if (uploadedChunks.length === expectedChunksCount) {
-      return this.mergeChunks(chunkDir, filename, fileHash);
+      // 记录新的分片信息到数据库
+      await this.insertChunk({
+        hash,
+        filename,
+        fileHash,
+        index,
+        size,
+        totalSize,
+        path: chunkPath,
+      });
+
+      // 获取已上传的分片信息（已去重）
+      const uploadedChunks = await this.findChunks(fileHash);
+      const chunkSize = 2 * 1024 * 1024; // 2MB per chunk
+      const expectedChunksCount = Math.ceil(totalSize / chunkSize);
+
+      console.log('文件分片计算详情：', {
+        fileHash,
+        filename,
+        totalSize,
+        chunkSize,
+        uploadedChunksCount: uploadedChunks.length,
+        expectedChunksCount,
+        uniqueIndices: [...new Set(uploadedChunks.map(chunk => chunk.index))].length,
+        calculation: `${totalSize} / ${chunkSize} = ${totalSize/chunkSize} (向上取整为 ${expectedChunksCount})`
+      });
+
+      // 检查是否所有分片都已上传
+      if (uploadedChunks.length === expectedChunksCount) {
+        // 验证分片序列的完整性
+        const indices = uploadedChunks.map(chunk => chunk.index).sort((a, b) => a - b);
+        const isSequenceComplete = indices.every((index, i) => index === i);
+        
+        if (!isSequenceComplete) {
+          throw new Error('分片序列不完整，请重新上传缺失的分片');
+        }
+
+        console.log('所有分片已上传完成，开始合并文件');
+        return this.mergeChunks(chunkDir, filename, fileHash);
+      }
+
+      console.log(`文件分片上传进度：${uploadedChunks.length}/${expectedChunksCount}`);
+      return { status: 'uploading', uploaded: uploadedChunks.length };
+    } catch (error) {
+      console.error('处理分片时发生错误：', {
+        error: error.message,
+        stack: error.stack,
+        context: {
+          filename,
+          fileHash,
+          index,
+          size,
+          totalSize,
+          memoryUsage: process.memoryUsage()
+        }
+      });
+      throw error;
     }
-
-    return { status: 'uploading', uploaded: uploadedChunks.length };
   }
 
   /**
@@ -106,6 +158,16 @@ export class UploadService {
     size,
     totalSize,
   }: ChunkInfo): void {
+    console.log('验证分片参数：', {
+      fileHash,
+      filename,
+      index,
+      hash,
+      chunkSize: chunk?.length,
+      size,
+      totalSize,
+    });
+
     if (!fileHash) {
       throw new Error('fileHash参数不能为空');
     }
@@ -166,39 +228,81 @@ export class UploadService {
     const filePath = join(this.uploadDir, filename);
     const writeStream = fsSync.createWriteStream(filePath);
     let hasError = false;
+    let totalProcessedSize = 0;
 
     try {
       const chunks = await this.findChunks(fileHash);
       
       // 验证分片完整性
       const sortedChunks = chunks.sort((a, b) => a.index - b.index);
+      const totalSize = chunks.reduce((acc, chunk) => acc + chunk.size, 0);
+      console.log('开始合并文件：', {
+        filename,
+        fileHash,
+        totalChunks: sortedChunks.length,
+        totalSize: `${(totalSize / 1024 / 1024).toFixed(2)}MB`,
+        chunks: sortedChunks.map(chunk => ({
+          index: chunk.index,
+          size: `${(chunk.size / 1024 / 1024).toFixed(2)}MB`
+        }))
+      });
+
       for (let i = 0; i < sortedChunks.length; i++) {
         if (sortedChunks[i].index !== i) {
+          console.error(`分片序列不完整，期望索引 ${i}，实际索引 ${sortedChunks[i].index}`);
           throw new Error(`分片序列不完整，缺少索引 ${i} 的分片`);
         }
         // 验证分片文件是否存在
         try {
           await fs.access(join(chunkDir, `${i}`));
+          console.log(`验证分片 ${i} 文件存在`);
         } catch {
+          console.error(`分片文件 ${i} 不存在`);
           throw new Error(`分片文件 ${i} 不存在`);
         }
       }
 
-      // 使用管道流进行文件合并
+      // 使用流式处理进行文件合并
       for (const chunk of sortedChunks) {
         if (hasError) break;
         try {
-          const chunkData = await fs.readFile(join(chunkDir, `${chunk.index}`));
+          console.log(`开始处理分片 ${chunk.index}，大小：${chunk.size} 字节`);
+          const readStream = fsSync.createReadStream(join(chunkDir, `${chunk.index}`));
           await new Promise((resolve, reject) => {
-            writeStream.write(chunkData, err => {
-              if (err) {
-                hasError = true;
-                reject(new Error(`写入文件块失败: ${err.message}`));
-              } else resolve(true);
+            readStream.on('error', (err) => {
+              hasError = true;
+              console.error(`读取分片 ${chunk.index} 时发生错误:`, err);
+              reject(new Error(`读取分片 ${chunk.index} 时发生错误: ${err.message}`));
             });
+
+            readStream.on('end', () => {
+              totalProcessedSize += chunk.size;
+              const progress = ((totalProcessedSize / chunks.reduce((acc, c) => acc + c.size, 0)) * 100).toFixed(2);
+              console.log('合并进度：', {
+                chunkIndex: chunk.index,
+                chunkSize: `${(chunk.size / 1024 / 1024).toFixed(2)}MB`,
+                processedSize: `${(totalProcessedSize / 1024 / 1024).toFixed(2)}MB`,
+                progress: `${progress}%`,
+                memoryUsage: process.memoryUsage()
+              });
+              resolve(true);
+            });
+
+            writeStream.on('error', (err) => {
+              hasError = true;
+              console.error(`写入分片 ${chunk.index} 时发生错误:`, err);
+              reject(new Error(`写入分片 ${chunk.index} 时发生错误: ${err.message}`));
+            });
+
+            readStream.pipe(writeStream, { end: false });
           });
+
+          // 验证分片写入是否成功
+          const stats = await fs.stat(filePath);
+          console.log(`当前文件大小：${stats.size} 字节，预期增加：${chunk.size} 字节`);
         } catch (err) {
           hasError = true;
+          console.error(`处理分片 ${chunk.index} 时发生错误:`, err);
           throw new Error(`处理分片 ${chunk.index} 时发生错误: ${err.message}`);
         }
       }
@@ -208,7 +312,15 @@ export class UploadService {
         // 验证最终文件大小
         const stats = await fs.stat(filePath);
         const expectedSize = chunks.reduce((acc, chunk) => acc + chunk.size, 0);
+        console.log('文件合并完成：', {
+          filename,
+          fileHash,
+          actualSize: `${(stats.size / 1024 / 1024).toFixed(2)}MB`,
+          expectedSize: `${(expectedSize / 1024 / 1024).toFixed(2)}MB`,
+          memoryUsage: process.memoryUsage()
+        });
         if (stats.size !== expectedSize) {
+          console.error(`文件大小校验失败: 预期 ${expectedSize} 字节，实际 ${stats.size} 字节`);
           throw new Error(`文件大小校验失败: 预期 ${expectedSize} 字节，实际 ${stats.size} 字节`);
         }
 
@@ -272,6 +384,23 @@ export class UploadService {
           reject(new Error(`查询分片信息失败: ${err.message}`));
         } else {
           resolve(docs);
+        }
+      });
+    });
+  }
+
+  /**
+   * 删除指定文件的特定索引分片记录
+   * @param fileHash - 文件唯一标识
+   * @param index - 分片索引
+   */
+  private async removeChunkByIndex(fileHash: string, index: number): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.db.remove({ fileHash, index }, { multi: true }, (err, numRemoved) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(numRemoved);
         }
       });
     });

@@ -30,6 +30,15 @@ export class UploadController {
     @UploadedFile() file: Express.Multer.File,
     @Body() chunkInfo: ChunkDto,
   ) {
+    console.log('控制器接收到分片上传请求：', {
+      filename: chunkInfo.filename,
+      fileHash: chunkInfo.fileHash,
+      index: chunkInfo.index,
+      size: chunkInfo.size,
+      totalSize: chunkInfo.totalSize,
+      chunkSize: file?.buffer?.length,
+      timestamp: new Date().toISOString()
+    });
     const { hash, filename, fileHash, index, size, totalSize } = chunkInfo;
     return this.uploadService.handleChunk({
       chunk: file.buffer,
