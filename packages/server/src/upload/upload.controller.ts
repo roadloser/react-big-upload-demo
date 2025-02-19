@@ -1,9 +1,12 @@
 import {
   Controller,
   Post,
+  Get,
   UploadedFile,
   UseInterceptors,
   Body,
+  Res,
+  Param,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
@@ -37,5 +40,23 @@ export class UploadController {
       size: parseInt(size, 10),
       totalSize: parseInt(totalSize, 10),
     });
+  }
+
+  @Get('files')
+  async getUploadedFiles() {
+    return this.uploadService.getUploadedFiles();
+  }
+
+  @Get('download/:filename')
+  async downloadFile(@Param('filename') filename: string, @Res() res: any) {
+    const files = await this.uploadService.getUploadedFiles();
+    const file = files.find(f => f.filename === filename);
+    
+    if (!file) {
+      res.status(404).send('文件不存在');
+      return;
+    }
+
+    res.download(file.path);
   }
 }

@@ -1,75 +1,55 @@
-import { useState, useCallback } from 'react';
-import { Upload, Button, Progress, message } from 'antd';
-import { UploadOutlined } from '@ant-design/icons';
-import type { UploadFile } from 'antd/es/upload/interface';
-import { processFileChunks, uploadChunk } from './utils/upload';
-import { retryOperation, asyncPool } from './utils/async';
+import { FileUploader } from './components/FileUploader';
+import { FileList } from './components/FileList';
+import { useEffect, useState } from 'react';
+import { Typography } from 'antd';
 
-const CHUNK_SIZE = 1024 * 1024 * 2; // 2MB per chunk
+const { Title, Paragraph } = Typography;
 
 function App() {
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
 
-  const handleUpload = useCallback(async (file: File) => {
-    try {
-      setUploading(true);
-      setProgress(0);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const handleResize = (e: MediaQueryListEvent | MediaQueryList) => {
+      setIsMobile(e.matches);
+    };
 
-      // 使用Web Worker处理文件分片
-      const { chunks, fileId, totalChunks } = await processFileChunks(
-        file,
-        CHUNK_SIZE,
-      );
-      let completed = 0;
+    handleResize(mediaQuery); // 初始检查
+    mediaQuery.addListener(handleResize);
 
-      // 上传分片，使用并发控制和重试机制
-      await asyncPool(3, chunks, async ({ chunk, index }) => {
-        const blob = new Blob([chunk]);
-        await retryOperation(async () => {
-          await uploadChunk({
-            chunk: blob,
-            filename: file.name,
-            fileId,
-            index,
-            size: blob.size,
-            file
-          });
-          completed++;
-          setProgress(Math.floor((completed / totalChunks) * 100));
-        });
-      });
-
-      message.success('上传成功');
-      setFileList([]);
-    } catch (err) {
-      message.error('上传失败');
-      console.error(err);
-    } finally {
-      setUploading(false);
-    }
+    return () => mediaQuery.removeListener(handleResize);
   }, []);
-
-  const uploadProps = {
-    beforeUpload: (file: File) => {
-      handleUpload(file);
-      return false;
-    },
-    fileList,
-    onChange: ({ fileList: newFileList }: { fileList: UploadFile[] }) => {
-      setFileList(newFileList);
-    },
-  };
 
   return (
     <div style={{ padding: 24 }}>
-      <Upload {...uploadProps}>
-        <Button icon={<UploadOutlined />} loading={uploading}>
-          选择文件
-        </Button>
-      </Upload>
-      {uploading && <Progress percent={progress} style={{ marginTop: 16 }} />}
+      <Typography style={{ marginBottom: 24 }}>
+        <Title level={2}>大文件上传演示</Title>
+        <Paragraph>
+          本演示展示了一个完整的大文件上传解决方案，包含以下特性：
+          <ul>
+            <li>支持文件分片上传，每个分片2MB</li>
+            <li>支持并发上传（同时上传3个分片）</li>
+            <li>支持断点续传（上传失败自动重试）</li>
+            <li>支持实时上传进度显示</li>
+            <li>支持已上传文件预览（图片类型）和下载</li>
+            <li>支持移动端自适应布局</li>
+          </ul>
+        </Paragraph>
+      </Typography>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: '24px'
+        }}
+      >
+        <div>
+          <FileUploader />
+        </div>
+        <div style={{ flex: 1 }}>
+          <FileList />
+        </div>
+      </div>
     </div>
   );
 }

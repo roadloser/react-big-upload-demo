@@ -27,10 +27,13 @@ export default defineConfig({
     sourcemap: true,
     outDir: 'dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'antd'],
+          'react-vendor': ['react', 'react-dom'],
+          'antd-vendor': ['antd'],
+          'axios-vendor': ['axios'],
         },
       },
     },

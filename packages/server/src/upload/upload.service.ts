@@ -292,4 +292,63 @@ export class UploadService {
       });
     });
   }
+
+  /**
+   * 获取已上传的文件列表
+   * @returns 文件列表，包含文件名、大小、类型等信息
+   */
+  async getUploadedFiles(): Promise<Array<{
+    filename: string;
+    size: number;
+    type: string;
+    path: string;
+    createdAt: Date;
+  }>> {
+    try {
+      const files = await fs.readdir(this.uploadDir);
+      const fileInfos = await Promise.all(
+        files
+          .filter(file => file !== 'chunks.db' && file !== '.DS_Store')
+          .map(async filename => {
+            const filePath = join(this.uploadDir, filename);
+            const stats = await fs.stat(filePath);
+            
+            // 排除文件夹
+            if (stats.isDirectory()) {
+              return null;
+            }
+
+            const type = this.getFileType(filename);
+
+            return {
+              filename,
+              size: stats.size,
+              type,
+              path: filePath,
+              createdAt: stats.birthtime,
+            };
+          }),
+      );
+
+      // 过滤掉null值（文件夹）
+      return fileInfos.filter(Boolean);
+    } catch (err) {
+      throw new Error(`获取文件列表失败: ${err.message}`);
+    }
+  }
+
+  /**
+   * 根据文件名获取文件类型
+   * @param filename - 文件名
+   * @returns 文件类型
+   */
+  private getFileType(filename: string): string {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+    
+    if (imageExts.includes(ext)) {
+      return 'image';
+    }
+    return 'file';
+  }
 }
