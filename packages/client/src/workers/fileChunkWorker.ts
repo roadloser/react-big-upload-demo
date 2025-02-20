@@ -86,9 +86,6 @@ self.onmessage = async (e: MessageEvent<{ file: File; chunkSize: number }>) => {
 
           // 清空当前批次并手动触发垃圾回收
           currentBatch = [];
-          if (globalThis.gc) {
-            globalThis.gc();
-          }
 
           // 添加小延迟，让系统有时间进行内存清理
           await new Promise(resolve => setTimeout(resolve, 10));
