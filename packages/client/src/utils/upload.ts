@@ -8,6 +8,7 @@ import axios from 'axios';
  * @property index - 分片序号
  * @property size - 分片大小
  * @property file - 原始文件对象
+ * @property signal - 用于取消上传的AbortSignal
  */
 interface ChunkUploadParams {
   chunk: Blob;
@@ -16,6 +17,7 @@ interface ChunkUploadParams {
   index: number;
   size: number;
   file: File;
+  signal?: AbortSignal;
 }
 
 /**
@@ -25,6 +27,7 @@ interface ChunkUploadParams {
  * @property totalChunks - 总分片数
  * @property processedChunks - 已处理的分片数量
  * @property isComplete - 是否处理完成
+ * @property worker - Worker实例，用于控制终止
  */
 interface WorkerChunkData {
   chunks: Array<{
@@ -36,6 +39,7 @@ interface WorkerChunkData {
   totalChunks: number;
   processedChunks?: number;
   isComplete?: boolean;
+  worker: Worker;
 }
 
 /**
@@ -60,6 +64,7 @@ export const uploadChunk = async ({
   index,
   size,
   file,
+  signal,
 }: ChunkUploadParams) => {
   console.log('准备上传文件分片：', {
     filename,
@@ -84,6 +89,7 @@ export const uploadChunk = async ({
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+    signal,
   });
 
   console.log('分片上传响应：', response.data);
@@ -94,15 +100,25 @@ export const uploadChunk = async ({
  * 处理文件分片
  * @param file - 要处理的文件对象
  * @param chunkSize - 分片大小（字节）
+ * @param signal - 用于取消处理的AbortSignal
  * @returns Promise，解析为处理后的分片数据
  */
 export const processFileChunks = (
   file: File,
   chunkSize: number,
+  signal?: AbortSignal,
 ): Promise<WorkerChunkData> => {
   return new Promise((resolve, reject) => {
     const worker = createChunkUploadWorker();
     let allChunks: WorkerChunkData['chunks'] = [];
+
+    // 添加AbortSignal监听
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        worker.terminate();
+        reject(new Error('文件处理已取消'));
+      }, { once: true });
+    }
 
     // 处理Worker返回的消息
     worker.onmessage = (e: MessageEvent<WorkerChunkData & { error?: string }>) => {
@@ -121,7 +137,8 @@ export const processFileChunks = (
         resolve({
           chunks: allChunks,
           fileId: e.data.fileId,
-          totalChunks: e.data.totalChunks
+          totalChunks: e.data.totalChunks,
+          worker
         });
       }
 
