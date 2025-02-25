@@ -19,7 +19,7 @@ export const retryOperation = async <T>(
 ): Promise<T> => {
   const { maxAttempts = 3, retryDelay = 1000, onError } = options;
   let lastError: Error | unknown;
-  
+
   try {
     return await operation();
   } catch (error) {
@@ -28,7 +28,10 @@ export const retryOperation = async <T>(
 
     for (let attempt = 1; attempt < maxAttempts; attempt++) {
       try {
-        const delay = typeof retryDelay === 'function' ? retryDelay(attempt) : retryDelay * attempt;
+        const delay =
+          typeof retryDelay === 'function'
+            ? retryDelay(attempt)
+            : retryDelay * attempt;
         await new Promise(resolve => setTimeout(resolve, delay));
         return await operation();
       } catch (err) {

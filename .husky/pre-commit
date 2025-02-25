@@ -1,0 +1,54 @@
+#!/usr/bin/env sh
+
+# 设置错误处理
+set -e
+
+# 检查并授予husky脚本执行权限
+chmod +x "$0" || {
+  echo "错误：无法设置当前脚本的执行权限"
+  exit 1
+}
+
+# 保存当前已暂存的文件列表
+staged_files=$(git diff --name-only --cached)
+
+# 如果没有暂存的文件，直接退出
+if [ -z "$staged_files" ]; then
+  echo "没有需要格式化的文件"
+  exit 0
+fi
+
+# 收集所有存在的文件到一个数组
+files_to_format=()
+for file in $staged_files; do
+  if [ -f "$file" ]; then
+    files_to_format+=("$file")
+  fi
+done
+
+# 如果没有有效的文件需要格式化，直接退出
+if [ ${#files_to_format[@]} -eq 0 ]; then
+  echo "没有有效的文件需要格式化"
+  exit 0
+fi
+
+echo "正在批量格式化文件..."
+
+# 一次性执行eslint格式化
+if ! pnpm eslint --fix "${files_to_format[@]}"; then
+  echo "错误：eslint格式化失败"
+  exit 1
+fi
+
+# 一次性执行prettier格式化
+if ! pnpm prettier --write "${files_to_format[@]}"; then
+  echo "错误：prettier格式化失败"
+  exit 1
+fi
+
+# 将格式化后的文件重新添加到暂存区
+for file in "${files_to_format[@]}"; do
+  git add "$file"
+done
+
+echo "文件格式化完成"

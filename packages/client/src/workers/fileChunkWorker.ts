@@ -30,7 +30,10 @@ const generateFileId = (file: File): string => {
  * @param chunkSize - 分片大小
  * @returns 分片数据的异步生成器
  */
-const processFileChunks = async function* (file: File, chunkSize: number): AsyncGenerator<ChunkData> {
+const processFileChunks = async function* (
+  file: File,
+  chunkSize: number,
+): AsyncGenerator<ChunkData> {
   const fileId = generateFileId(file);
   let offset = 0;
 
@@ -75,7 +78,10 @@ self.onmessage = async (e: MessageEvent<{ file: File; chunkSize: number }>) => {
         processedChunks++;
 
         // 当达到批处理大小或处理完所有分片时，发送当前批次
-        if (currentBatch.length >= batchSize || processedChunks === totalChunks) {
+        if (
+          currentBatch.length >= batchSize ||
+          processedChunks === totalChunks
+        ) {
           self.postMessage({
             chunks: currentBatch,
             fileId,
@@ -92,7 +98,9 @@ self.onmessage = async (e: MessageEvent<{ file: File; chunkSize: number }>) => {
         }
       } catch (chunkError: Error | unknown) {
         console.error('处理单个分片时发生错误：', chunkError);
-        throw new Error(`处理分片${processedChunks}时失败：${chunkError instanceof Error ? chunkError.message : String(chunkError)}`);
+        throw new Error(
+          `处理分片${processedChunks}时失败：${chunkError instanceof Error ? chunkError.message : String(chunkError)}`,
+        );
       }
     }
   } catch (error) {

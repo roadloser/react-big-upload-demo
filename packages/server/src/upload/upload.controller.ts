@@ -37,7 +37,7 @@ export class UploadController {
       size: chunkInfo.size,
       totalSize: chunkInfo.totalSize,
       chunkSize: file?.buffer?.length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
     const { hash, filename, fileHash, index, size, totalSize } = chunkInfo;
     return this.uploadService.handleChunk({
@@ -60,7 +60,7 @@ export class UploadController {
   async downloadFile(@Param('filename') filename: string, @Res() res: any) {
     const files = await this.uploadService.getUploadedFiles();
     const file = files.find(f => f.filename === filename);
-    
+
     if (!file) {
       res.status(404).send('文件不存在');
       return;

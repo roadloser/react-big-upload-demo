@@ -1,7 +1,7 @@
-import { FileUploader } from './components/FileUploader';
-import { FileList } from './components/FileList';
 import { useEffect, useState, useCallback } from 'react';
 import { Typography } from 'antd';
+import { FileUploader } from './components/FileUploader';
+import { FileList } from './components/FileList';
 
 const { Title, Paragraph } = Typography;
 
@@ -45,7 +45,7 @@ function App() {
         style={{
           display: 'flex',
           flexDirection: isMobile ? 'column' : 'row',
-          gap: '24px'
+          gap: '24px',
         }}
       >
         <div>
