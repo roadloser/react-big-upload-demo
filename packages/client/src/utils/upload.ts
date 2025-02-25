@@ -72,7 +72,7 @@ export const uploadChunk = async ({
     index,
     size,
     totalSize: file.size,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 
   const formData = new FormData();
@@ -114,14 +114,20 @@ export const processFileChunks = (
 
     // 添加AbortSignal监听
     if (signal) {
-      signal.addEventListener('abort', () => {
-        worker.terminate();
-        reject(new Error('文件处理已取消'));
-      }, { once: true });
+      signal.addEventListener(
+        'abort',
+        () => {
+          worker.terminate();
+          reject(new Error('文件处理已取消'));
+        },
+        { once: true },
+      );
     }
 
     // 处理Worker返回的消息
-    worker.onmessage = (e: MessageEvent<WorkerChunkData & { error?: string }>) => {
+    worker.onmessage = (
+      e: MessageEvent<WorkerChunkData & { error?: string }>,
+    ) => {
       if (e.data.error) {
         worker.terminate();
         reject(new Error(e.data.error));
@@ -138,7 +144,7 @@ export const processFileChunks = (
           chunks: allChunks,
           fileId: e.data.fileId,
           totalChunks: e.data.totalChunks,
-          worker
+          worker,
         });
       }
 

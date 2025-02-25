@@ -4,6 +4,7 @@ module.exports = {
     project: 'tsconfig.json',
     tsconfigRootDir: __dirname,
     sourceType: 'module',
+    extraFileExtensions: ['.json'],
   },
   plugins: ['@typescript-eslint/eslint-plugin', 'prettier'],
   extends: [
@@ -17,7 +18,14 @@ module.exports = {
     node: true,
     jest: true,
   },
-  ignorePatterns: ['.eslintrc.js'],
+  ignorePatterns: [
+    '.eslintrc.js',
+    '*.yaml',
+    '.husky/*',
+    '.husky/**/*',
+    '.husky/pre-commit',
+    '.prettierignore',
+  ],
   rules: {
     'react/jsx-filename-extension': [1, { extensions: ['.tsx', '.ts'] }],
     'import/extensions': [
@@ -39,6 +47,21 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
+    'no-plusplus': 'off',
+    'no-await-in-loop': 'off',
+    'no-promise-executor-return': 'off',
+    'no-restricted-globals': 'off',
+    'class-methods-use-this': 'off',
+    'no-shadow': 'off',
+    '@typescript-eslint/no-shadow': 'off',
+    'no-empty': ['error', { allowEmptyCatch: true }],
+    'no-useless-constructor': 'off',
+    'no-empty-function': ['error', { allow: ['constructors'] }],
+    'no-constant-condition': ['error', { checkLoops: false }],
+    'no-loop-func': 'off',
+    'react/jsx-props-no-spreading': 'off',
+    'no-restricted-syntax': 'off',
+    'no-unused-expressions': 'off',
   },
   settings: {
     'import/resolver': {
@@ -46,5 +69,8 @@ module.exports = {
         extensions: ['.js', '.jsx', '.ts', '.tsx'],
       },
     },
+    react: {
+      version: '18.2.0',
+    },
   },
-}
+};

@@ -25,14 +25,14 @@ export class DatabaseService implements OnModuleDestroy {
       const databaseInstance = new Datastore({
         filename: databasePath,
         autoload: true,
-        onload: (error) => {
+        onload: error => {
           if (error) {
             console.error(`数据库加载失败: ${databasePath}`, error);
           }
         },
       });
 
-      databaseInstance.loadDatabase((error) => {
+      databaseInstance.loadDatabase(error => {
         if (error) {
           console.error(`数据库加载失败: ${databasePath}`, error);
         }
@@ -63,7 +63,7 @@ export class DatabaseService implements OnModuleDestroy {
     const cleanupPromises = Array.from(this.databasePool.entries()).map(
       async ([path, database]) => {
         try {
-          await new Promise<void>((resolve) => {
+          await new Promise<void>(resolve => {
             database.persistence.compactDatafile();
             database.persistence.stopAutocompaction();
             resolve();

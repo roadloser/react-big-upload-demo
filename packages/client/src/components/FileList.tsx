@@ -32,7 +32,7 @@ export function FileList() {
   const handleDownload = useCallback(async (filename: string) => {
     try {
       const response = await axios.get(`/api/upload/download/${filename}`, {
-        responseType: 'blob'
+        responseType: 'blob',
       });
       const blob = new Blob([response.data]);
       const url = window.URL.createObjectURL(blob);
@@ -88,7 +88,9 @@ export function FileList() {
             <Button
               type="link"
               icon={<EyeOutlined />}
-              onClick={() => setPreviewImage(`/api/upload/download/${record.filename}`)}
+              onClick={() =>
+                setPreviewImage(`/api/upload/download/${record.filename}`)
+              }
             >
               预览
             </Button>
@@ -100,12 +102,8 @@ export function FileList() {
 
   return (
     <div>
-      <Table
-        dataSource={uploadedFiles}
-        columns={columns}
-        rowKey="filename"
-      />
-      
+      <Table dataSource={uploadedFiles} columns={columns} rowKey="filename" />
+
       <Image
         style={{ display: 'none' }}
         preview={{
