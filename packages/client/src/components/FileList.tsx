@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { Button, Image, message, Space, Table } from 'antd';
 import { DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import { downloadFileWithChunks } from '../utils/download';
 
 interface FileInfo {
   filename: string;
@@ -14,6 +15,10 @@ interface FileInfo {
 export function FileList() {
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([]);
   const [previewImage, setPreviewImage] = useState<string>();
+  const [downloadProgress, setDownloadProgress] = useState<{
+    [key: string]: number;
+  }>({});
+  const downloadControllerRef = useRef<{ [key: string]: AbortController }>({});
 
   const fetchUploadedFiles = useCallback(async () => {
     try {
@@ -31,21 +36,48 @@ export function FileList() {
 
   const handleDownload = useCallback(async (filename: string) => {
     try {
-      const response = await axios.get(`/api/upload/download/${filename}`, {
-        responseType: 'blob',
+      // 创建下载控制器
+      const controller = new AbortController();
+      downloadControllerRef.current[filename] = controller;
+
+      // 初始化进度
+      setDownloadProgress(prev => ({ ...prev, [filename]: 0 }));
+
+      // 使用分片下载，启用流式下载
+      await downloadFileWithChunks({
+        url: `/api/upload/download/${filename}`,
+        filename,
+        chunkSize: 1024 * 1024 * 2, // 2MB 分片
+        concurrency: 3, // 并发下载3个分片
+        onProgress: progress => {
+          setDownloadProgress(prev => ({ ...prev, [filename]: progress }));
+        },
+        signal: controller.signal,
+        retries: 3, // 失败重试3次
+        streamDownload: true, // 启用流式下载
       });
-      const blob = new Blob([response.data]);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+
+      // 下载完成后清理
+      setDownloadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[filename];
+        return newProgress;
+      });
+      delete downloadControllerRef.current[filename];
     } catch (err) {
-      message.error('下载失败');
-      console.error(err);
+      // 如果不是取消下载导致的错误，显示错误消息
+      if (err instanceof Error && err.message !== '下载已取消') {
+        message.error('下载失败');
+        console.error(err);
+      }
+
+      // 清理下载状态
+      setDownloadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[filename];
+        return newProgress;
+      });
+      delete downloadControllerRef.current[filename];
     }
   }, []);
 
@@ -81,8 +113,11 @@ export function FileList() {
             type="link"
             icon={<DownloadOutlined />}
             onClick={() => handleDownload(record.filename)}
+            loading={!!downloadProgress[record.filename]}
           >
-            下载
+            {downloadProgress[record.filename] !== undefined
+              ? `下载中 ${downloadProgress[record.filename]}%`
+              : '下载'}
           </Button>
           {record.type === 'image' && (
             <Button
